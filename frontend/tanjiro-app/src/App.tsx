@@ -45,10 +45,14 @@ function App() {
       case 'audio':
         audioPlaybackRef.current?.enqueue(data.data as string);
         break;
+      case 'text':
+        controllerRef.current?.addText(data.data as string);
+        break;
       case 'interrupted':
         audioPlaybackRef.current?.flush();
         break;
       case 'turn_complete':
+        controllerRef.current?.scheduleClear(1000);
         break;
     }
   }, []);

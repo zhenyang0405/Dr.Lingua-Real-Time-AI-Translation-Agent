@@ -115,8 +115,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, session_id: str
                             ).decode("utf-8")
                             await send_json({"type": "audio", "data": audio_b64})
 
-                        elif part.text:
-                            await send_json({"type": "text", "data": part.text})
+                if event.output_transcription and event.output_transcription.text:
+                    if not event.output_transcription.finished:
+                        await send_json({"type": "text", "data": event.output_transcription.text})
 
                 if event.turn_complete:
                     await send_json({"type": "turn_complete"})

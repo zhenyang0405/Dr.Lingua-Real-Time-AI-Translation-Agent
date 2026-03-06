@@ -1,4 +1,4 @@
-import { Container, AnimatedSprite, Texture, Rectangle, Assets, Application, FederatedPointerEvent, FederatedWheelEvent } from 'pixi.js';
+import { Container, AnimatedSprite, Texture, Rectangle, Assets, Application, FederatedPointerEvent, FederatedWheelEvent, Text, Graphics } from 'pixi.js';
 import { ANIMATIONS } from './spriteConfig';
 
 const CROSSFADE_FRAMES = 10;
@@ -21,9 +21,30 @@ export class TanjiroController {
   private customPosition = false;
   private customScale: number | null = null;
 
+  private bubbleContainer = new Container();
+  private bubbleBg = new Graphics();
+  private bubbleText = new Text({
+    text: '',
+    style: {
+      fontFamily: 'Arial',
+      fontSize: 24,
+      fill: 0x000000,
+      wordWrap: true,
+      wordWrapWidth: 400,
+      align: 'center',
+    }
+  });
+  private textClearTimeout: number | null = null;
+  private currentText = '';
+
   constructor(app: Application, container: Container) {
     this.app = app;
     this.container = container;
+
+    this.bubbleContainer.addChild(this.bubbleBg);
+    this.bubbleContainer.addChild(this.bubbleText);
+    this.bubbleContainer.visible = false;
+    this.container.addChild(this.bubbleContainer);
   }
 
   async loadAnimations(): Promise<void> {
@@ -174,6 +195,82 @@ export class TanjiroController {
     ticker.add(onTick);
   }
 
+  private updateBubble() {
+    if (!this.currentText) {
+      this.bubbleContainer.visible = false;
+      return;
+    }
+    
+    this.bubbleText.text = this.currentText;
+    const padding = 20;
+    const width = this.bubbleText.width + padding * 2;
+    const height = this.bubbleText.height + padding * 2;
+    
+    this.bubbleBg.clear();
+    this.bubbleBg.roundRect(0, 0, width, height, 16);
+    this.bubbleBg.fill({ color: 0xffffff, alpha: 0.9 });
+    
+    // Add a little tail to the bubble
+    this.bubbleBg.moveTo(width / 2 - 10, height);
+    this.bubbleBg.lineTo(width / 2, height + 15);
+    this.bubbleBg.lineTo(width / 2 + 10, height);
+    this.bubbleBg.fill({ color: 0xffffff, alpha: 0.9 });
+    
+    this.bubbleText.x = padding;
+    this.bubbleText.y = padding;
+    
+    // Position bubble above character (adjusting for character scaling)
+    this.bubbleContainer.x = -width / 2;
+    const def = ANIMATIONS[this.currentState] ?? ANIMATIONS.blink;
+    this.bubbleContainer.y = -def.frameHeight - height;
+    
+    this.bubbleContainer.visible = true;
+  }
+
+  addText(text: string): void {
+    // Cancel any pending clear when new text arrives
+    if (this.textClearTimeout !== null) {
+      clearTimeout(this.textClearTimeout);
+      this.textClearTimeout = null;
+    }
+
+    if (!this.currentText) {
+      this.currentText = text;
+    } else {
+      this.currentText += text;
+    }
+
+    if (this.currentText.length > 300) {
+      this.currentText = this.currentText.slice(this.currentText.length - 300);
+    }
+
+    this.updateBubble();
+  }
+
+  setText(text: string): void {
+    this.currentText = text;
+
+    if (this.currentText.length > 300) {
+      this.currentText = this.currentText.slice(this.currentText.length - 300);
+    }
+
+    this.updateBubble();
+  }
+
+  scheduleClear(delay: number): void {
+    if (this.textClearTimeout !== null) {
+      clearTimeout(this.textClearTimeout);
+    }
+    this.textClearTimeout = window.setTimeout(() => {
+      this.clearText();
+    }, delay);
+  }
+
+  clearText(): void {
+    this.currentText = '';
+    this.updateBubble();
+  }
+
   private stopAll(): void {
     // Stop blink
     if (this.blinkTimeout !== null) {
@@ -245,6 +342,10 @@ export class TanjiroController {
 
   setThinking(thinking: boolean): void {
     if (thinking === this.isThinking) return;
+    
+    if (thinking) {
+      this.clearText();
+    }
 
     this.stopAll();
 
