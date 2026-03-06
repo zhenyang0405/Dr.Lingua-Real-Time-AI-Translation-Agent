@@ -1,4 +1,4 @@
-import { Container, AnimatedSprite, Texture, Rectangle, Assets, Application } from 'pixi.js';
+import { Container, AnimatedSprite, Texture, Rectangle, Assets, Application, FederatedPointerEvent, FederatedWheelEvent } from 'pixi.js';
 import { ANIMATIONS } from './spriteConfig';
 
 const CROSSFADE_FRAMES = 10;
@@ -15,6 +15,11 @@ export class TanjiroController {
   private thinkingTimeout: number | null = null;
   private isTalking = false;
   private isThinking = false;
+
+  private dragging = false;
+  private dragOffset = { x: 0, y: 0 };
+  private customPosition = false;
+  private customScale: number | null = null;
 
   constructor(app: Application, container: Container) {
     this.app = app;
@@ -47,6 +52,14 @@ export class TanjiroController {
       this.sprites.set(name, sprite);
     }
 
+    this.container.eventMode = 'dynamic';
+    this.container.cursor = 'pointer';
+    this.container.on('pointerdown', this.onDragStart.bind(this));
+    this.container.on('globalpointermove', this.onDragMove.bind(this));
+    this.container.on('pointerup', this.onDragEnd.bind(this));
+    this.container.on('pointerupoutside', this.onDragEnd.bind(this));
+    this.container.on('wheel', this.onWheel.bind(this));
+
     this.positionCharacter();
 
     this.app.ticker.add(() => {
@@ -77,13 +90,55 @@ export class TanjiroController {
     const { width, height } = this.app.screen;
     this.lastWidth = width;
     this.lastHeight = height;
-    this.container.x = width / 2;
-    this.container.y = height;
+
+    if (!this.customPosition) {
+      this.container.x = width / 2;
+      this.container.y = height;
+    }
 
     const targetHeight = height * 0.4;
     const def = ANIMATIONS[this.currentState] ?? ANIMATIONS.blink;
-    const scale = targetHeight / def.frameHeight;
+    const scale = this.customScale !== null ? this.customScale : (targetHeight / def.frameHeight);
     this.container.scale.set(scale);
+  }
+
+  private onWheel(event: FederatedWheelEvent): void {
+    const scaleStep = 0.05;
+    const currentScale = this.container.scale.x;
+    
+    // Determine scroll direction
+    // event.deltaY > 0 means scrolling down (zoom out)
+    // event.deltaY < 0 means scrolling up (zoom in)
+    const newScale = event.deltaY > 0 
+      ? Math.max(0.1, currentScale - scaleStep) 
+      : Math.min(3.0, currentScale + scaleStep);
+
+    this.customScale = newScale;
+    this.positionCharacter();
+  }
+
+  private onDragStart(event: FederatedPointerEvent): void {
+    this.dragging = true;
+    const parent = this.container.parent;
+    if (!parent) return;
+    const position = event.getLocalPosition(parent);
+    this.dragOffset.x = this.container.x - position.x;
+    this.dragOffset.y = this.container.y - position.y;
+    this.customPosition = true;
+  }
+
+  private onDragMove(event: FederatedPointerEvent): void {
+    if (this.dragging) {
+      const parent = this.container.parent;
+      if (!parent) return;
+      const position = event.getLocalPosition(parent);
+      this.container.x = position.x + this.dragOffset.x;
+      this.container.y = position.y + this.dragOffset.y;
+    }
+  }
+
+  private onDragEnd(): void {
+    this.dragging = false;
   }
 
   transitionTo(state: string): void {
