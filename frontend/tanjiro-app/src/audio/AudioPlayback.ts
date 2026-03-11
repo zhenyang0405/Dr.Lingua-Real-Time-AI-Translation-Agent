@@ -1,10 +1,13 @@
 export class AudioPlayback {
   private audioContext: AudioContext;
+  private primaryGain: GainNode;
   private nextPlayTime = 0;
   private scheduledSources: AudioBufferSourceNode[] = [];
 
   constructor() {
-    this.audioContext = new AudioContext({ sampleRate: 24000 });
+    this.audioContext = new window.AudioContext({ sampleRate: 24000 });
+    this.primaryGain = this.audioContext.createGain();
+    this.primaryGain.connect(this.audioContext.destination);
   }
 
   enqueue(base64: string): void {
@@ -25,7 +28,7 @@ export class AudioPlayback {
 
     const source = this.audioContext.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(this.audioContext.destination);
+    source.connect(this.primaryGain);
 
     const now = this.audioContext.currentTime;
     const startTime = Math.max(now, this.nextPlayTime);
@@ -40,15 +43,36 @@ export class AudioPlayback {
   }
 
   flush(): void {
-    for (const source of this.scheduledSources) {
+    const sourcesToStop = [...this.scheduledSources];
+    this.scheduledSources = [];
+    this.nextPlayTime = 0;
+
+    // Hard disconnect the gain node. Even if a buffer source ignores stop(), its output is severed instantly.
+    this.primaryGain.disconnect();
+    this.primaryGain = this.audioContext.createGain();
+    this.primaryGain.connect(this.audioContext.destination);
+
+    for (const source of sourcesToStop) {
       try {
+        source.onended = null;
         source.stop();
+        source.disconnect();
       } catch {
         // already stopped
       }
     }
-    this.scheduledSources = [];
-    this.nextPlayTime = 0;
+  }
+
+  async pause(): Promise<void> {
+    if (this.audioContext.state === 'running') {
+      await this.audioContext.suspend();
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
   }
 
   async close(): Promise<void> {

@@ -89,6 +89,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, session_id: str
                             role="user",
                         )
                         live_request_queue.send_content(content)
+                    elif data.get("type") == "interrupt" or data.get("type") == "stop":
+                        # Sending an activity start signal tells the agent the user has started doing something, which cancels its current playback.
+                        print("Backend received interrupt from frontend!")
+                        live_request_queue.send_activity_start()
+                        live_request_queue.send_activity_end()
             except WebSocketDisconnect:
                 pass
 
@@ -128,6 +133,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, session_id: str
                     await send_json({"type": "interrupted"})
                     await send_json({"type": "state", "state": "blink"})
                     is_first_audio_in_turn = True
+                    
 
         await asyncio.gather(upstream_task(), downstream_task())
 

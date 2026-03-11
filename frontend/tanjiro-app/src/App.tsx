@@ -10,18 +10,27 @@ function App() {
   const controllerRef = useRef<TanjiroController | null>(null);
   const audioCaptureRef = useRef<AudioCapture | null>(null);
   const audioPlaybackRef = useRef<AudioPlayback | null>(null);
+  const isInterruptedRef = useRef<boolean>(false);
 
   const [talking, setTalking] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   const handleMessage = useCallback((data: Record<string, unknown>) => {
     switch (data.type) {
       case 'state':
         switch (data.state) {
           case 'talking':
+            isInterruptedRef.current = false;
+            // Auto resume if paused
+            if (isPaused) {
+               togglePause();
+            }
             setTalking(true);
             setThinking(false);
-            controllerRef.current?.setTalking(true);
+            if (controllerRef.current) {
+              controllerRef.current.setTalking(true);
+            }
             break;
           case 'thinking':
             setThinking(true);
@@ -43,13 +52,21 @@ function App() {
         }
         break;
       case 'audio':
-        audioPlaybackRef.current?.enqueue(data.data as string);
+        if (!isInterruptedRef.current) {
+          audioPlaybackRef.current?.enqueue(data.data as string);
+        }
         break;
       case 'text':
         controllerRef.current?.addText(data.data as string);
         break;
       case 'interrupted':
-        audioPlaybackRef.current?.flush();
+        console.log('[Websocket] Received interrupted event from backend:', data);
+        isInterruptedRef.current = true;
+        
+        // Let the togglePause handler do the flushing/clearing work
+        if (!isPaused) {
+          togglePause();
+        }
         break;
       case 'turn_complete':
         controllerRef.current?.scheduleClear(1000);
@@ -57,7 +74,7 @@ function App() {
     }
   }, []);
 
-  const { connectionState, connect, disconnect, sendAudio } = useWebSocket(handleMessage);
+  const { connectionState, connect, disconnect, sendAudio, sendInterrupt } = useWebSocket(handleMessage);
 
   const handleConnect = async () => {
     if (connectionState !== 'disconnected') return;
@@ -112,6 +129,26 @@ function App() {
     controllerRef.current?.playHappy();
   };
 
+  const togglePause = async () => {
+    if (isPaused) {
+      await audioPlaybackRef.current?.resume();
+      setIsPaused(false);
+    } else {
+      audioPlaybackRef.current?.flush();
+      controllerRef.current?.clearText();
+      setTalking(false);
+      setThinking(false);
+      if (controllerRef.current) {
+        controllerRef.current.setTalking(false);
+        controllerRef.current.setThinking(false);
+      }
+      setIsPaused(true);
+      
+      // Explicitly tell the backend to cut off its response queue
+      sendInterrupt();
+    }
+  };
+
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
 
@@ -149,6 +186,21 @@ function App() {
         >
           {isConnecting ? 'Connecting...' : isConnected ? 'Disconnect' : 'Talk to Tanjiro'}
         </button>
+
+        {/* Pause/Resume button */}
+        {(isConnected || isConnecting) && (
+          <button
+            onClick={togglePause}
+            style={{
+              padding: '10px 24px', fontSize: 16, cursor: 'pointer',
+              borderRadius: 8, border: 'none',
+              background: isPaused ? '#e74c3c' : '#f39c12',
+              color: '#fff',
+            }}
+          >
+            {isPaused ? 'Resume Audio' : 'Pause Audio'}
+          </button>
+        )}
 
         {/* Debug buttons */}
         <button onClick={toggleTalking} style={{

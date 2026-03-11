@@ -61,5 +61,11 @@ export function useWebSocket(onMessage: MessageHandler) {
     }
   }, []);
 
-  return { connectionState, connect, disconnect, sendAudio, sendText };
+  const sendInterrupt = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
+    }
+  }, []);
+
+  return { connectionState, connect, disconnect, sendAudio, sendText, sendInterrupt };
 }
