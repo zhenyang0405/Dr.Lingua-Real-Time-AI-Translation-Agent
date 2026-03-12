@@ -2,9 +2,20 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth
 import asyncio
 
-# Initialize Firebase Admin app using Application Default Credentials
+from firebase_admin import credentials
+import os
+
+# Initialize Firebase Admin app using the service account key if available
 if not firebase_admin._apps:
-    firebase_admin.initialize_app()
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    key_path = os.path.join(current_dir, '..', 'secrets', 'serviceAccountKey.json')
+    
+    if os.path.exists(key_path):
+        cred = credentials.Certificate(key_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Fallback to Application Default Credentials
+        firebase_admin.initialize_app()
 
 async def verify_token(token: str) -> str:
     """
