@@ -1,86 +1,60 @@
 import React from 'react';
-import { AnnotationItem, DisplayTranslationArgs, TranslateImageRegionArgs } from '../types/messages';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { TranslationDoc } from '../types/messages';
 
 interface Props {
-  item: AnnotationItem;
+  doc: TranslationDoc;
 }
 
-export const AnnotationCard: React.FC<Props> = ({ item }) => {
-  const isImageTx = item.type === "image_translation";
-  const date = new Date(item.timestamp);
-  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+export const AnnotationCard: React.FC<Props> = ({ doc }) => {
+  const timeStr = doc.timestamp?.toDate
+    ? doc.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '';
 
-  if (isImageTx) {
-    const args = item.args as TranslateImageRegionArgs;
-    return (
-      <div className="bg-white rounded shadow-sm border border-gray-200 mb-4 p-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
-        <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
-          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-            <span>🖼️</span> {args.image_description}
-          </h3>
-          <span className="text-xs text-gray-400">{timeStr}</span>
-        </div>
-        
-        <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Translated Labels:</h4>
-          <ul className="space-y-2">
-            {args.translated_labels?.map((label, idx) => (
-              <li key={idx} className="text-sm">
-                <span className="font-medium text-blue-700">{label.original}</span>
-                <span className="text-gray-500 mx-2">→</span>
-                <span className="font-medium text-gray-900">{label.translated}</span>
-                {label.position && (
-                  <span className="text-xs text-gray-400 ml-2">({label.position})</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    );
-  }
+  if (!doc) return null;
 
-  // Text Translation
-  const args = item.args as DisplayTranslationArgs;
   return (
-    <div className="bg-white rounded shadow-sm border border-gray-200 mb-4 p-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+    <div className="bg-white rounded shadow-sm border border-gray-200 mb-4 p-4 overflow-hidden">
       <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <span>📄</span> {args.section_id}
+          <span>📄</span> {doc.section_id || 'Translation'}
         </h3>
         <span className="text-xs text-gray-400">{timeStr}</span>
       </div>
-      
-      <div className="mb-4">
-        <p className="text-gray-900 text-[15px] leading-relaxed">
-          {args.translated_text}
-        </p>
-      </div>
 
-      {args.nuance_notes && (
-        <div className="bg-blue-50/50 rounded p-3 mb-3 border border-blue-100">
-          <p className="text-sm text-blue-800 italic">
-            <span className="font-medium not-italic">📝 Nuance:</span> {args.nuance_notes}
-          </p>
+      {doc.source_text && (
+        <div className="mb-3 text-sm text-gray-500 italic overflow-x-auto">
+          <ReactMarkdown
+            remarkPlugins={[remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
+            {doc.source_text}
+          </ReactMarkdown>
         </div>
       )}
 
-      {args.key_terms && args.key_terms.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Key Terms</h4>
-          <ul className="space-y-1">
-            {args.key_terms.map((term, idx) => (
-              <li key={idx} className="text-sm flex items-start gap-2">
-                <span className="text-gray-400 mt-[2px]">•</span>
-                <div>
-                   <span className="font-medium text-gray-700">{term.original}</span>
-                   <span className="text-gray-400 mx-1">→</span>
-                   <span className="font-medium text-gray-900">{term.translated}</span>
-                   {term.context && <span className="text-xs text-gray-500 block">{term.context}</span>}
-                </div>
-              </li>
-            ))}
-          </ul>
+      {doc.translated_text && (
+        <div className="mb-4 text-[15px] leading-relaxed text-gray-900 overflow-x-auto whitespace-pre-wrap break-words">
+          <ReactMarkdown
+            remarkPlugins={[remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
+            {doc.translated_text}
+          </ReactMarkdown>
+        </div>
+      )}
+      
+      {!doc.translated_text && !doc.source_text && (
+        <p className="text-gray-400 italic text-sm">Empty translation content</p>
+      )}
+
+      {doc.nuance_notes && (
+        <div className="bg-blue-50/50 rounded p-3 mb-3 border border-blue-100">
+          <p className="text-sm text-blue-800 italic">
+            <span className="font-medium not-italic">📝 Nuance:</span> {doc.nuance_notes}
+          </p>
         </div>
       )}
     </div>

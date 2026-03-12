@@ -6,6 +6,8 @@ import { Transcript } from '../hooks/useWebSocket';
 interface WebSocketContextProps {
   isConnected: boolean;
   isAuthenticated: boolean;
+  uid: string | null;
+  sessionId: string | null;
   sendMessage: (msg: UpstreamMessage) => void;
   annotations: AnnotationItem[];
   transcripts: Transcript[];

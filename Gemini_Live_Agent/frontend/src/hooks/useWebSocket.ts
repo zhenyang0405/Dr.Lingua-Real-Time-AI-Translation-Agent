@@ -11,6 +11,8 @@ export interface Transcript {
 export function useWebSocket(token: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "speaking" | "thinking">("idle");
@@ -52,6 +54,8 @@ export function useWebSocket(token: string | null) {
           switch (msg.type) {
             case "auth_success":
               setIsAuthenticated(true);
+              setUid(msg.uid);
+              setSessionId(msg.session_id);
               break;
             case "audio":
               audioQueueRef.current.push(msg.data);
@@ -145,6 +149,8 @@ export function useWebSocket(token: string | null) {
   return {
     isConnected,
     isAuthenticated,
+    uid,
+    sessionId,
     sendMessage,
     annotations,
     transcripts,

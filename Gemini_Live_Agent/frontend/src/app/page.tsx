@@ -137,7 +137,7 @@ function MainContent() {
 
        {/* Right side: Annotations (40%) */}
        <div className="w-full md:w-[40%] h-full overflow-hidden">
-          <AnnotationPanel />
+          <AnnotationPanel docName={activeDoc?.name ?? null} />
        </div>
 
        {/* Overlay transcript display pinned to bottom */}

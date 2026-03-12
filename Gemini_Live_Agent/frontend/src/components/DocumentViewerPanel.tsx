@@ -8,6 +8,13 @@ interface DocumentViewerPanelProps {
   onClose: () => void;
 }
 
+interface Selection {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
 export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   doc,
   onClose,
@@ -15,11 +22,21 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   const { sendMessage, isConnected } = useWebSocketContext();
   const [currentPage, setCurrentPage] = useState(0);
   const [scale, setScale] = useState(1.0);
-  const [sending, setSending] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
+  const sendFrameRef = useRef<(() => void) | undefined>(undefined);
 
   const totalPages = doc.pages.length;
   const currentBase64 = doc.pages[currentPage];
+
+  // Notify backend of active document
+  useEffect(() => {
+    if (isConnected) {
+      sendMessage({ type: "set_document", doc_name: doc.name });
+    }
+  }, [doc.name, isConnected, sendMessage]);
 
   // Send document frame to backend on interval
   useEffect(() => {
@@ -27,17 +44,65 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
 
     const sendFrame = () => {
       if (!doc.pages[currentPage]) return;
-      sendMessage({ type: "document_frame", data: doc.pages[currentPage] });
+      const base64Image = doc.pages[currentPage];
+
+      if (!selection) {
+        sendMessage({ type: "document_frame", data: base64Image });
+        return;
+      }
+
+      // Draw box on canvas
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        // Draw original image
+        ctx.drawImage(img, 0, 0);
+
+        // Draw selection box
+        const x = Math.min(selection.startX, selection.endX) * img.width;
+        const y = Math.min(selection.startY, selection.endY) * img.height;
+        const width = Math.abs(selection.endX - selection.startX) * img.width;
+        const height = Math.abs(selection.endY - selection.startY) * img.height;
+
+        ctx.fillStyle = "rgba(255, 255, 0, 0.3)"; // Yellow semi-transparent
+        ctx.fillRect(x, y, width, height);
+        ctx.strokeStyle = "rgba(255, 255, 0, 0.8)";
+        ctx.lineWidth = Math.max(2, img.width * 0.005);
+        ctx.strokeRect(x, y, width, height);
+
+        const newBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+        sendMessage({ type: "document_frame", data: newBase64 });
+      };
+      img.src = `data:image/jpeg;base64,${base64Image}`;
     };
 
-    // Send immediately when page changes
+    sendFrameRef.current = sendFrame;
     sendFrame();
 
-    intervalRef.current = setInterval(sendFrame, 3000);
+    intervalRef.current = setInterval(() => {
+      // Don't auto-send while actively drawing the selection
+      if (sendFrameRef.current && !isDrawing) {
+        sendFrameRef.current();
+      }
+    }, 3000);
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isConnected, doc, currentPage, sendMessage]);
+  }, [isConnected, doc, currentPage, sendMessage, selection, isDrawing]);
+
+  // Handle page changes gracefully without causing cascading renders in effect
+  const [prevDocInfo, setPrevDocInfo] = useState({ id: doc.id, page: currentPage });
+  if (prevDocInfo.id !== doc.id || prevDocInfo.page !== currentPage) {
+    setSelection(null);
+    setIsDrawing(false);
+    setPrevDocInfo({ id: doc.id, page: currentPage });
+  }
 
   const goToPrev = () => setCurrentPage((p) => Math.max(0, p - 1));
   const goToNext = () =>
@@ -46,6 +111,50 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   const zoomIn = () => setScale((s) => Math.min(s + 0.1, 3.0));
   const zoomOut = () => setScale((s) => Math.max(s - 0.1, 0.5));
   const resetZoom = () => setScale(1.0);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!imageContainerRef.current) return;
+    // Right click clears selection
+    if (e.button === 2) {
+      setSelection(null);
+      setTimeout(() => sendFrameRef.current?.(), 0);
+      return;
+    }
+    
+    const rect = imageContainerRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setSelection({ startX: x, startY: y, endX: x, endY: y });
+    setIsDrawing(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDrawing || !selection || !imageContainerRef.current) return;
+    const rect = imageContainerRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    setSelection({ ...selection, endX: x, endY: y });
+  };
+
+  const handleMouseUp = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+      // Clear if it was just a tiny click without drag
+      if (
+        selection &&
+        Math.abs(selection.endX - selection.startX) < 0.01 &&
+        Math.abs(selection.endY - selection.startY) < 0.01
+      ) {
+        setSelection(null);
+      }
+      setTimeout(() => sendFrameRef.current?.(), 0);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelection(null);
+    setTimeout(() => sendFrameRef.current?.(), 0);
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -62,6 +171,16 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          {selection && (
+            <button
+              onClick={clearSelection}
+              className="px-2 py-1 text-xs font-semibold bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition-colors"
+              title="Clear Selection"
+            >
+              Clear
+            </button>
+          )}
+
           {/* Zoom controls */}
           <div className="flex items-center gap-1 border-r border-gray-300 pr-2 mr-1">
             <button
@@ -122,19 +241,46 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
               Sending
             </div>
           )}
-
         </div>
       </div>
 
       {/* Document preview */}
-      <div className="flex-1 relative bg-slate-100 flex items-center justify-center overflow-auto p-4">
+      <div 
+        className="flex-1 relative bg-slate-100 flex overflow-auto p-4 select-none"
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         {currentBase64 ? (
+          <div 
+            ref={imageContainerRef}
+            className="relative cursor-crosshair shadow-md transition-transform duration-200 ease-out origin-top inline-block m-auto"
+            style={{ transform: `scale(${scale})` }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            draggable={false}
+          >
             <img
               src={`data:image/jpeg;base64,${currentBase64}`}
               alt={`Page ${currentPage + 1} of ${doc.name}`}
-              className="max-w-full max-h-full object-contain rounded shadow-md transition-transform duration-200 ease-out origin-center"
-              style={{ transform: `scale(${scale})` }}
+              className="max-w-full max-h-full object-contain rounded block"
+              draggable={false}
             />
+            {selection && (
+              <div 
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(selection.startX, selection.endX) * 100}%`,
+                  top: `${Math.min(selection.startY, selection.endY) * 100}%`,
+                  width: `${Math.abs(selection.endX - selection.startX) * 100}%`,
+                  height: `${Math.abs(selection.endY - selection.startY) * 100}%`,
+                  backgroundColor: 'rgba(255, 255, 0, 0.3)',
+                  border: '2px solid rgba(255, 255, 0, 0.8)',
+                  pointerEvents: 'none'
+                }} 
+              />
+            )}
+          </div>
         ) : (
           <div className="text-gray-400 font-medium">
             No content to display

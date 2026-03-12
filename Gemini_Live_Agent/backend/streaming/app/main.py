@@ -20,6 +20,10 @@ from google.genai import types
 app = FastAPI(title="Dr. Lingua Streaming API")
 logger = logging.getLogger("uvicorn.error")
 
+# Enable debug logging for ADK and genai to see tool declarations sent to Gemini
+logging.getLogger("google.adk").setLevel(logging.DEBUG)
+logging.getLogger("google.genai").setLevel(logging.DEBUG)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -43,8 +47,10 @@ async def safe_send(websocket: WebSocket, data: dict, shutdown_event: asyncio.Ev
         shutdown_event.set()
 
 
-async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQueue, shutdown_event: asyncio.Event):
+async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQueue, shutdown_event: asyncio.Event, session_id: str):
     """Receive messages from browser and enqueue to LiveRequestQueue."""
+    from streaming.app.active_documents import active_documents
+
     try:
         while True:
             message = await websocket.receive()
@@ -78,6 +84,11 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
                             parts=[types.Part(text=data["content"])]
                         )
                     )
+
+                elif msg_type == "set_document":
+                    active_documents[session_id] = data["doc_name"]
+                    logger.info(f"[upstream] Active document set: {data['doc_name']} for session {session_id}")
+
     except WebSocketDisconnect:
         logger.info("Upstream task: WebSocket disconnected")
     except Exception as e:
@@ -85,6 +96,7 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
     finally:
         shutdown_event.set()
         live_request_queue.close()
+        active_documents.pop(session_id, None)
 
 async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config, shutdown_event: asyncio.Event):
     """Process events from run_live() and send to browser.
@@ -96,6 +108,7 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
 
     while retry_count < max_retries and not shutdown_event.is_set():
         try:
+            logger.info(f"[downstream] Starting run_live for user={user_id}, session={session_id}")
             async for event in runner.run_live(
                 user_id=user_id,
                 session_id=session_id,
@@ -104,6 +117,13 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
             ):
                 if shutdown_event.is_set():
                     return
+
+                # Log every event for debugging
+                logger.debug(f"[downstream] Event: turn_complete={event.turn_complete}, "
+                             f"interrupted={event.interrupted}, "
+                             f"has_content={bool(event.content and event.content.parts)}, "
+                             f"has_input_tx={bool(event.input_transcription)}, "
+                             f"has_output_tx={bool(event.output_transcription)}")
 
                 # Handle content parts (audio output + tool calls)
                 if event.content and event.content.parts:
@@ -115,11 +135,16 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                                 "data": audio_b64
                             }, shutdown_event)
                         if part.function_call:
+                            logger.info(f"[downstream] Tool call: name={part.function_call.name}, "
+                                        f"args={part.function_call.args}")
                             await safe_send(websocket, {
                                 "type": "tool_call",
                                 "name": part.function_call.name,
                                 "args": part.function_call.args
                             }, shutdown_event)
+                        if part.function_response:
+                            logger.info(f"[downstream] Tool response: name={part.function_response.name}, "
+                                        f"response={part.function_response.response}")
 
                 # Handle transcription events
                 if event.input_transcription and event.input_transcription.text:
@@ -151,7 +176,7 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
             return
         except Exception as e:
             retry_count += 1
-            logger.warning(f"Gemini connection dropped (attempt {retry_count}/{max_retries}): {e}")
+            logger.warning(f"Gemini connection dropped (attempt {retry_count}/{max_retries}): {e}", exc_info=True)
             if retry_count >= max_retries:
                 logger.error(f"Downstream giving up after {max_retries} retries")
                 await safe_send(websocket, {"type": "error", "message": "Gemini connection lost"}, shutdown_event)
@@ -190,30 +215,33 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4003, reason="Invalid token")
         return
 
-    await websocket.send_json({"type": "auth_success", "uid": uid})
-
     # Phase 2: Session Init
     session_id = f"session_{uid}_{int(time.time())}"
 
+    await websocket.send_json({"type": "auth_success", "uid": uid, "session_id": session_id})
+
     try:
+        logger.info(f"[ws] Creating ADK session for user={uid}, session={session_id}")
         await create_session(user_id=uid, session_id=session_id)
         live_request_queue = LiveRequestQueue()
         run_config = create_run_config()
+        logger.info(f"[ws] Session created successfully, run_config={run_config}")
     except Exception as e:
-        logger.error(f"Failed to create session: {e}")
+        logger.error(f"Failed to create session: {e}", exc_info=True)
         await websocket.close(code=1011, reason="Session Init Error")
         return
 
     # Phase 3: Streaming Loop
+    logger.info(f"[ws] Starting streaming loop for user={uid}, session={session_id}")
     shutdown_event = asyncio.Event()
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(upstream_task(websocket, live_request_queue, shutdown_event))
+            tg.create_task(upstream_task(websocket, live_request_queue, shutdown_event, session_id))
             tg.create_task(downstream_task(websocket, runner, uid, session_id, live_request_queue, run_config, shutdown_event))
     except* WebSocketDisconnect:
         logger.info(f"Client {uid} disconnected")
     except* Exception as e:
-        logger.error(f"Session error for {uid}: {e}")
+        logger.error(f"Session error for {uid}: {e}", exc_info=True)
     finally:
         # Phase 4: Cleanup — ALWAYS close the queue
         shutdown_event.set()

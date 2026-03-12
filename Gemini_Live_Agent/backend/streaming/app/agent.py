@@ -1,5 +1,25 @@
+import logging
+import inspect
 from google.adk.agents import Agent
-from streaming.app.tools.translation import display_translation
+from google.adk.tools import FunctionTool
+from streaming.app.tools.translation import save_translation
+
+logger = logging.getLogger("uvicorn.error")
+
+# Debug: log the tool function signature to verify ToolContext is handled correctly
+sig = inspect.signature(save_translation)
+logger.info(f"[agent] save_translation signature: {sig}")
+logger.info(f"[agent] save_translation params: {list(sig.parameters.keys())}")
+
+# Debug: inspect what ADK generates as the function declaration
+try:
+    _tool = FunctionTool(save_translation)
+    _decl = _tool._get_declaration()
+    logger.info(f"[agent] Tool declaration name: {_decl.name}")
+    logger.info(f"[agent] Tool declaration description: {_decl.description}")
+    logger.info(f"[agent] Tool declaration parameters: {_decl.parameters}")
+except Exception as e:
+    logger.error(f"[agent] Failed to get tool declaration: {e}", exc_info=True)
 
 SYSTEM_INSTRUCTION = """
 IDENTITY:
@@ -46,15 +66,19 @@ TRANSLATION QUALITY:
 - When multiple valid translations exist, mention the alternatives briefly.
 - Do not translate proper nouns (names, brands, institutions) unless asked.
 - For acronyms, give the full translated form on first encounter, then use the acronym.
-"""
 
-# TOOL USAGE:
-# - ALWAYS call display_translation when translating any section of text.
-#   The user needs to see the translation displayed in the annotation panel, not just hear it.
+TOOL USAGE:
+- ALWAYS call save_translation when translating any section of text.
+  The user needs to see the translation displayed in the annotation panel, not just hear it.
+- Every time you translate, call save_translation with the translated text. This applies to
+  every translation throughout the session, not just the first one.
+- If you do not call save_translation, the translation will not appear on screen for the user.
+"""
 
 agent = Agent(
     name="dr_lingua",
     model="gemini-2.5-flash-native-audio-preview-12-2025",
     instruction=SYSTEM_INSTRUCTION,
-    tools=[],
+    tools=[save_translation],
 )
+logger.info(f"[agent] Agent created: name={agent.name}, model={agent.model}, tools={agent.tools}")
