@@ -46,12 +46,20 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
       if (!doc.pages[currentPage]) return;
       const base64Image = doc.pages[currentPage];
 
+      // Compute normalized selection coords for backend cropping
+      const selectionCoords = selection ? {
+        x: Math.min(selection.startX, selection.endX),
+        y: Math.min(selection.startY, selection.endY),
+        width: Math.abs(selection.endX - selection.startX),
+        height: Math.abs(selection.endY - selection.startY),
+      } : undefined;
+
       if (!selection) {
         sendMessage({ type: "document_frame", data: base64Image });
         return;
       }
 
-      // Draw box on canvas
+      // Draw box on canvas so the Live agent can see the selection visually
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
@@ -76,7 +84,7 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
         ctx.strokeRect(x, y, width, height);
 
         const newBase64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-        sendMessage({ type: "document_frame", data: newBase64 });
+        sendMessage({ type: "document_frame", data: newBase64, selection: selectionCoords });
       };
       img.src = `data:image/jpeg;base64,${base64Image}`;
     };

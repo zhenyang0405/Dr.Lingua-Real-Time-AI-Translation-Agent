@@ -1,6 +1,6 @@
 from google.adk.agents import Agent
 from streaming.app.tools.translation import save_translation
-from streaming.app.tools.image_translation import translate_image
+from streaming.app.tools.image_translation import translate_page, translate_selection
 
 SYSTEM_INSTRUCTION = """
 IDENTITY:
@@ -54,16 +54,17 @@ TOOL USAGE:
 - Every time you translate, call save_translation with the translated text. This applies to
   every translation throughout the session, not just the first one.
 - If you do not call save_translation, the translation will not appear on screen for the user.
-- When the user asks you to translate a table, chart, graph, diagram, or any image with text,
-  call translate_image instead. Describe what you see in the image, specify the target language,
-  and provide any nuance notes. The translated image will appear in the annotation panel.
-- Use translate_image for visual content where spatial layout matters (tables, charts, diagrams).
-  Use save_translation for regular paragraph text.
+- When the user asks you to translate the entire page as an image, call translate_page.
+  This produces a translated version of the full document page.
+- When the user has drawn a yellow selection box on a specific area (table, chart, diagram)
+  and asks you to translate it, call translate_selection. This crops and translates only that region.
+- Use save_translation for regular paragraph text. Use translate_page or translate_selection
+  for visual content where spatial layout matters.
 """
 
 agent = Agent(
     name="dr_lingua",
     model="gemini-2.5-flash-native-audio-preview-12-2025",
     instruction=SYSTEM_INSTRUCTION,
-    tools=[save_translation, translate_image],
+    tools=[save_translation, translate_page, translate_selection],
 )

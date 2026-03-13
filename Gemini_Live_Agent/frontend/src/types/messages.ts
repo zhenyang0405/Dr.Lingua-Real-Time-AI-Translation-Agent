@@ -3,7 +3,7 @@ export type UpstreamMessage =
   | { type: "auth"; token: string }
   | { type: "audio"; data: string } // base64 PCM 16kHz
   | { type: "screen_frame"; data: string } // base64 JPEG
-  | { type: "document_frame"; data: string } // base64 JPEG of a document page
+  | { type: "document_frame"; data: string; selection?: { x: number; y: number; width: number; height: number } } // base64 JPEG of a document page
   | { type: "text"; content: string }
   | { type: "set_document"; doc_name: string };
 
