@@ -7,6 +7,7 @@ import base64
 import asyncio
 import time
 import os
+import re
 from dotenv import load_dotenv
 
 # Load environment variables from backend/.env
@@ -30,6 +31,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def detect_language(text: str) -> str:
+    """Detect whether text is Japanese or English."""
+    if re.search(r'[\u3040-\u309f\u30a0-\u30ff]', text):
+        return "JP"
+    if re.search(r'[\u4e00-\u9fff]', text):
+        return "JP"
+    return "EN"
+
 
 @app.get("/health")
 async def health_check():
@@ -139,12 +149,14 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                     await safe_send(websocket, {
                         "type": "transcription",
                         "role": "user",
+                        "language": detect_language(event.input_transcription.text),
                         "text": event.input_transcription.text
                     }, shutdown_event)
                 if event.output_transcription and event.output_transcription.text:
                     await safe_send(websocket, {
                         "type": "transcription",
                         "role": "agent",
+                        "language": detect_language(event.output_transcription.text),
                         "text": event.output_transcription.text
                     }, shutdown_event)
 
