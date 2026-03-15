@@ -38,18 +38,22 @@ export const AudioManager: React.FC = () => {
       workletNodeRef.current = workletNode;
 
       workletNode.port.onmessage = (event) => {
-        const pcmBuffer = event.data;
-        const buffer = new Uint8Array(pcmBuffer);
-        
-        let binary = '';
-        const chunkSize = 8192;
-        for (let i = 0; i < buffer.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, Array.from(buffer.slice(i, i + chunkSize)));
-        }
-        const base64Data = btoa(binary);
+        const msg = event.data;
 
-        console.log("Sending audio chunk, size:", base64Data.length);
-        sendMessage({ type: "audio", data: base64Data });
+        if (msg.type === "vad" || msg.type === "debug") {
+          return;
+        }
+
+        if (msg.type === "audio") {
+          const buffer = new Uint8Array(msg.buffer);
+          let binary = "";
+          const chunkSize = 8192;
+          for (let i = 0; i < buffer.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, Array.from(buffer.slice(i, i + chunkSize)));
+          }
+          const base64Data = btoa(binary);
+          sendMessage({ type: "audio", data: base64Data });
+        }
       };
 
       sourceNode.connect(workletNode);
