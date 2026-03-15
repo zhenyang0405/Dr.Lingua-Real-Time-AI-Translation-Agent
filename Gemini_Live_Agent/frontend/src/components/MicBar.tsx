@@ -47,13 +47,7 @@ export default function MicBar() {
       workletNode.port.onmessage = (event) => {
         const msg = event.data;
 
-        if (msg.type === "debug") {
-          console.log(`[VAD] rms=${msg.rms} noise=${msg.noiseFloor} speechTh=${msg.speechThreshold} silenceTh=${msg.silenceThreshold} speaking=${msg.speaking}`);
-          return;
-        }
-
         if (msg.type === "vad") {
-          console.log(`[VAD] ${msg.speaking ? "SPEECH START" : "SPEECH END"}`);
           setIsSpeaking(msg.speaking);
           return;
         }
