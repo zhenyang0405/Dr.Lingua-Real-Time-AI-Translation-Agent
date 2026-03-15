@@ -47,6 +47,9 @@ async def show_visual_noun(
     if not tool_context:
         return {"status": "error", "message": "No tool context available."}
 
+    # Prevent ADK from feeding tool response back to the agent for summarization
+    tool_context.actions.skip_summarization = True
+
     user_id = tool_context.user_id
 
     # Generate image via Gemini
@@ -88,7 +91,7 @@ async def show_visual_noun(
 
     if not image_bytes:
         return {
-            "scheduling": "SILENT",
+    
             "status": "error",
             "message": "Image generation did not return an image.",
             "term": term,
@@ -104,7 +107,7 @@ async def show_visual_noun(
     signed_url = await generate_signed_url(GCS_BUCKET, blob_path, expiration_minutes=1440)
 
     return {
-        "scheduling": "SILENT",
+
         "status": "success",
         "image_url": signed_url,
         "gcs_path": blob_path,

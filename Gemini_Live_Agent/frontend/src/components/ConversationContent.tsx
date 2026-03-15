@@ -70,8 +70,13 @@ export default function ConversationContent() {
   // Empty state + history list
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+      {/* Static header area */}
+      <div className="flex flex-col items-center pt-10 px-6">
         <EmptyState />
+      </div>
+
+      {/* Scrollable history area */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-6 pb-6">
         {loadingDetail ? (
           <div className="flex justify-center py-6">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#1D9E75]" />
