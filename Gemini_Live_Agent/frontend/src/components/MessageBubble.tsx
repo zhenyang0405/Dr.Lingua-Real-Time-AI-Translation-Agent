@@ -35,14 +35,14 @@ export default function MessageBubble({
       style={{ animation: `fadeUp 0.4s ease both`, animationDelay: `${delay}s` }}
     >
       <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+        <span className="text-[13px] font-medium text-gray-400 uppercase tracking-wider">
           {sender}
         </span>
-        <span className="text-[11px] text-gray-400">{time}</span>
-        <span className="text-[11px]">{icon}</span>
+        <span className="text-[13px] text-gray-400">{time}</span>
+        <span className="text-[13px]">{icon}</span>
       </div>
       <div
-        className={`text-[14px] leading-relaxed text-gray-900 ${
+        className={`text-[18px] leading-relaxed text-gray-900 ${
           isCJK ? "font-[system-ui,'Noto_Sans_JP',sans-serif]" : ""
         }`}
       >

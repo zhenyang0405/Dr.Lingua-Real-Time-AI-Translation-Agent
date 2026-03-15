@@ -14,11 +14,11 @@ export default function ColumnHeader({ badge, badgeColor, title }: ColumnHeaderP
   return (
     <div className="flex items-center gap-2 px-5 py-2.5 border-b border-gray-200 shrink-0">
       {badge && (
-        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${bgColor}`}>
+        <span className={`text-[16px] font-medium px-2 py-0.5 rounded-full ${bgColor}`}>
           {badge}
         </span>
       )}
-      <span className="text-[13px] font-medium text-gray-500">{title}</span>
+      <span className="text-[18px] font-medium text-gray-500">{title}</span>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export default function InlineImageRow({ cards, onThumbClick, onStackClick }: In
       {visible.map((card) => (
         <div
           key={card.id}
-          className="w-[72px] h-[72px] rounded-lg overflow-hidden cursor-pointer relative border border-gray-200 shrink-0 transition-transform hover:scale-105"
+          className="w-[90px] h-[90px] rounded-lg overflow-hidden cursor-pointer relative border border-gray-200 shrink-0 transition-transform hover:scale-105"
           onClick={() => onThumbClick(card)}
         >
           {card.imageUrl ? (

@@ -71,11 +71,7 @@ export default function TwoColumnTranscript({ transcripts, agentStatus }: TwoCol
         </div>
 
         {/* Divider */}
-        <div className="bg-gray-200 relative">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center z-10">
-            <span className="text-[9px] text-gray-400">&#x25C0;&#x25B6;</span>
-          </div>
-        </div>
+        <div className="bg-gray-200 relative"></div>
 
         {/* Right column — Agent (Speaker B) */}
         <div className="flex flex-col overflow-hidden">
