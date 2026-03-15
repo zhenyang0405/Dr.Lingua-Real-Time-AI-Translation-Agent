@@ -5,6 +5,7 @@ import { useWebSocketContext } from "@/components/VisualNounWebSocketProvider";
 
 export default function MicBar() {
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const {
     sendMessage,
     isConnected,
@@ -44,15 +45,29 @@ export default function MicBar() {
       workletNodeRef.current = workletNode;
 
       workletNode.port.onmessage = (event) => {
-        const pcmBuffer = event.data;
-        const buffer = new Uint8Array(pcmBuffer);
-        let binary = "";
-        const chunkSize = 8192;
-        for (let i = 0; i < buffer.length; i += chunkSize) {
-          binary += String.fromCharCode.apply(null, Array.from(buffer.slice(i, i + chunkSize)));
+        const msg = event.data;
+
+        if (msg.type === "debug") {
+          console.log(`[VAD] rms=${msg.rms} noise=${msg.noiseFloor} speechTh=${msg.speechThreshold} silenceTh=${msg.silenceThreshold} speaking=${msg.speaking}`);
+          return;
         }
-        const base64Data = btoa(binary);
-        sendMessage({ type: "audio", data: base64Data });
+
+        if (msg.type === "vad") {
+          console.log(`[VAD] ${msg.speaking ? "SPEECH START" : "SPEECH END"}`);
+          setIsSpeaking(msg.speaking);
+          return;
+        }
+
+        if (msg.type === "audio") {
+          const buffer = new Uint8Array(msg.buffer);
+          let binary = "";
+          const chunkSize = 8192;
+          for (let i = 0; i < buffer.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, Array.from(buffer.slice(i, i + chunkSize)));
+          }
+          const base64Data = btoa(binary);
+          sendMessage({ type: "audio", data: base64Data });
+        }
       };
 
       sourceNode.connect(workletNode);
@@ -176,7 +191,7 @@ export default function MicBar() {
 
   return (
     <div className="flex items-center justify-center gap-3 px-4 py-3 border-t border-gray-200 bg-white shrink-0">
-      {/* Left wave bars (green) */}
+      {/* Left wave bars (green) — animate only when VAD detects speech */}
       <div className="flex items-center gap-0.5 h-5">
         {isListening &&
           waveBars.map((h, i) => (
@@ -184,9 +199,10 @@ export default function MicBar() {
               key={`l-${i}`}
               className="w-[3px] rounded-sm bg-[#5DCAA5]"
               style={{
-                height: `${h}px`,
-                animation: "wave 0.8s ease-in-out infinite",
+                height: isSpeaking ? `${h}px` : "3px",
+                animation: isSpeaking ? "wave 0.8s ease-in-out infinite" : "none",
                 animationDelay: `${i * 0.1}s`,
+                transition: "height 0.15s ease",
               }}
             />
           ))}
@@ -220,7 +236,7 @@ export default function MicBar() {
         </svg>
       </button>
 
-      {/* Right wave bars (orange) */}
+      {/* Right wave bars (orange) — animate only when VAD detects speech */}
       <div className="flex items-center gap-0.5 h-5">
         {isListening &&
           waveBars.map((h, i) => (
@@ -228,9 +244,10 @@ export default function MicBar() {
               key={`r-${i}`}
               className="w-[3px] rounded-sm bg-[#F0997B]"
               style={{
-                height: `${h}px`,
-                animation: "wave 0.8s ease-in-out infinite",
+                height: isSpeaking ? `${h}px` : "3px",
+                animation: isSpeaking ? "wave 0.8s ease-in-out infinite" : "none",
                 animationDelay: `${i * 0.1}s`,
+                transition: "height 0.15s ease",
               }}
             />
           ))}
