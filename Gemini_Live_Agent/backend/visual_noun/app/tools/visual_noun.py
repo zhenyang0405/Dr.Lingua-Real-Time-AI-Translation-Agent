@@ -107,6 +107,7 @@ async def show_visual_noun(
         "scheduling": "SILENT",
         "status": "success",
         "image_url": signed_url,
+        "gcs_path": blob_path,
         "term": term,
         "translated_term": translated_term,
         "brief_explanation": brief_explanation,

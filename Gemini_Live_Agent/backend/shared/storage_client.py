@@ -66,6 +66,13 @@ async def generate_signed_url(bucket_name: str, path: str, expiration_minutes: i
     return await asyncio.to_thread(_sign)
 
 
+async def generate_signed_urls_batch(bucket_name: str, paths: list[str], expiration_minutes: int = 60) -> dict[str, str]:
+    """Sign multiple GCS paths. Returns {path: signed_url}."""
+    tasks = [generate_signed_url(bucket_name, p, expiration_minutes) for p in paths]
+    results = await asyncio.gather(*tasks)
+    return dict(zip(paths, results))
+
+
 async def list_blobs(bucket_name: str, prefix: str) -> list[dict]:
     """Lists blobs under a prefix. Returns [{name, path, updated}]."""
     def _list():

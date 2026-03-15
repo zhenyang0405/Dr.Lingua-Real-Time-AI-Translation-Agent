@@ -1,6 +1,8 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from shared.auth import verify_token
+from shared.firestore_client import save_conversation, list_conversations, get_conversation
+from shared.storage_client import generate_signed_urls_batch
 import json
 import logging
 import base64
@@ -20,6 +22,8 @@ from google.genai import types
 
 app = FastAPI(title="Dr. Lingua Visual Noun API")
 logger = logging.getLogger("uvicorn.error")
+
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 
 logging.getLogger("google.adk").setLevel(logging.DEBUG)
 logging.getLogger("google.genai").setLevel(logging.DEBUG)
@@ -95,13 +99,55 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
         live_request_queue.close()
 
 
-async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config, shutdown_event: asyncio.Event):
+def _flush_turn(input_buf: dict, output_buf: dict, pending_cards: list, conversation_turns: list):
+    """Build a paired turn dict from buffers and append to conversation_turns."""
+    input_text = input_buf["text"].strip()
+    output_text = output_buf["text"].strip()
+    if not input_text and not output_text:
+        return
+
+    turn = {}
+    if input_text:
+        turn["input"] = {
+            "role": "user",
+            "language": input_buf["language"],
+            "text": input_text,
+            "timestamp": int(time.time() * 1000),
+        }
+    if output_text:
+        output_entry = {
+            "role": "agent",
+            "language": output_buf["language"],
+            "text": output_text,
+            "timestamp": int(time.time() * 1000),
+        }
+        if pending_cards:
+            output_entry["cards"] = list(pending_cards)
+        turn["output"] = output_entry
+
+    conversation_turns.append(turn)
+
+    # Reset buffers
+    input_buf["text"] = ""
+    input_buf["language"] = ""
+    output_buf["text"] = ""
+    output_buf["language"] = ""
+    pending_cards.clear()
+
+
+async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config, shutdown_event: asyncio.Event, conversation_turns: list):
     """Process events from run_live() and send to browser.
 
     Handles audio, transcriptions, tool calls, and visual noun card responses.
+    Buffers transcriptions and saves paired turns to Firestore.
     """
     max_retries = 5
     retry_count = 0
+
+    # Backend-side transcript buffers (mirrors frontend pattern)
+    input_buf = {"text": "", "language": "EN"}
+    output_buf = {"text": "", "language": "JP"}
+    pending_cards: list[dict] = []
 
     while retry_count < max_retries and not shutdown_event.is_set():
         try:
@@ -140,14 +186,27 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                                         f"response={part.function_response.response}")
                             # Send visual noun card data when the tool completes
                             if part.function_response.name == "show_visual_noun":
+                                response_data = part.function_response.response
                                 await safe_send(websocket, {
                                     "type": "visual_noun_card",
-                                    "data": part.function_response.response
+                                    "data": response_data
                                 }, shutdown_event)
+
+                                # Buffer card for Firestore (store gcs_path, not signed URL)
+                                if response_data.get("status") == "success":
+                                    pending_cards.append({
+                                        "term": response_data.get("term", ""),
+                                        "translated_term": response_data.get("translated_term", ""),
+                                        "brief_explanation": response_data.get("brief_explanation", ""),
+                                        "gcs_path": response_data.get("gcs_path", ""),
+                                    })
 
                 # Handle transcription events
                 if event.input_transcription and event.input_transcription.text:
                     last_input_language = detect_language(event.input_transcription.text)
+                    input_buf["text"] = event.input_transcription.text
+                    input_buf["language"] = last_input_language
+
                     logger.info(f"[downstream] input_transcription: lang={last_input_language}, text='{event.input_transcription.text[:80]}'")
                     await safe_send(websocket, {
                         "type": "transcription",
@@ -164,6 +223,8 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                         logger.debug("[downstream] Skipping tool response in transcription")
                     else:
                         output_language = "EN" if last_input_language == "JP" else "JP"
+                        output_buf["text"] = text
+                        output_buf["language"] = output_language
                         logger.info(f"[downstream] output_transcription: text='{text[:80] if text else 'NONE'}'")
                         logger.info(f"[downstream] Sending agent transcription: lang={output_language}")
                         await safe_send(websocket, {
@@ -173,13 +234,16 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                             "text": text
                         }, shutdown_event)
 
-                # Handle turn completion
+                # Handle turn completion — flush buffers and save to Firestore
                 if event.turn_complete:
-                    logger.info(f"[downstream] turn_complete fired")
+                    _flush_turn(input_buf, output_buf, pending_cards, conversation_turns)
+                    # Fire-and-forget save to Firestore
+                    asyncio.create_task(_save_conversation_safe(user_id, session_id, conversation_turns))
                     await safe_send(websocket, {"type": "turn_complete"}, shutdown_event)
 
-                # Handle interruption
+                # Handle interruption — also flush
                 if event.interrupted:
+                    _flush_turn(input_buf, output_buf, pending_cards, conversation_turns)
                     await safe_send(websocket, {"type": "interrupted"}, shutdown_event)
 
             # run_live() ended normally
@@ -198,6 +262,14 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
             await asyncio.sleep(1)
             logger.info(f"Reconnecting to Gemini Live API (attempt {retry_count})...")
             await safe_send(websocket, {"type": "reconnecting"}, shutdown_event)
+
+
+async def _save_conversation_safe(user_id: str, session_id: str, turns: list[dict]):
+    """Fire-and-forget wrapper for saving conversation to Firestore."""
+    try:
+        await save_conversation(user_id, session_id, list(turns))
+    except Exception as e:
+        logger.error(f"_save_conversation_safe: FAILED — {e}", exc_info=True)
 
 
 @app.websocket("/ws")
@@ -246,15 +318,70 @@ async def websocket_endpoint(websocket: WebSocket):
     # Phase 3: Streaming Loop
     logger.info(f"[ws] Starting streaming loop for user={uid}, session={session_id}")
     shutdown_event = asyncio.Event()
+    conversation_turns: list[dict] = []
     try:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(upstream_task(websocket, live_request_queue, shutdown_event))
-            tg.create_task(downstream_task(websocket, runner, uid, session_id, live_request_queue, run_config, shutdown_event))
+            tg.create_task(downstream_task(websocket, runner, uid, session_id, live_request_queue, run_config, shutdown_event, conversation_turns))
     except* WebSocketDisconnect:
         logger.info(f"Client {uid} disconnected")
     except* Exception as e:
         logger.error(f"Session error for {uid}: {e}", exc_info=True)
     finally:
-        # Phase 4: Cleanup
+        # Phase 4: Cleanup — final save to Firestore
         shutdown_event.set()
         live_request_queue.close()
+        if conversation_turns:
+            try:
+                await save_conversation(uid, session_id, conversation_turns)
+            except Exception as e:
+                logger.error(f"Final save FAILED: {e}", exc_info=True)
+        else:
+            logger.info("No turns to save")
+
+
+async def _extract_auth_uid(request: Request) -> str:
+    """Extract and verify uid from Authorization Bearer token."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = auth_header[len("Bearer "):]
+    try:
+        return await verify_token(token)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+@app.get("/api/conversations")
+async def list_conversations_endpoint(request: Request):
+    """List past conversations for the authenticated user."""
+    uid = await _extract_auth_uid(request)
+    conversations = await list_conversations(uid)
+    return {"conversations": conversations}
+
+
+@app.get("/api/conversations/{session_id}")
+async def get_conversation_endpoint(session_id: str, request: Request):
+    """Get a full conversation with re-signed image URLs."""
+    uid = await _extract_auth_uid(request)
+    conversation = await get_conversation(uid, session_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Re-sign all GCS paths in cards
+    gcs_paths = []
+    for turn in conversation.get("turns", []):
+        output = turn.get("output", {})
+        for card in output.get("cards", []):
+            if card.get("gcs_path"):
+                gcs_paths.append(card["gcs_path"])
+
+    if gcs_paths and GCS_BUCKET:
+        signed_urls = await generate_signed_urls_batch(GCS_BUCKET, gcs_paths)
+        for turn in conversation.get("turns", []):
+            output = turn.get("output", {})
+            for card in output.get("cards", []):
+                if card.get("gcs_path") in signed_urls:
+                    card["image_url"] = signed_urls[card["gcs_path"]]
+
+    return conversation
