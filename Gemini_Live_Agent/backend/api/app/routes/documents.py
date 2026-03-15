@@ -6,7 +6,7 @@ from shared import storage_client
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
-GCS_BUCKET = os.getenv("GCS_BUCKET", "theta-citron-488903-i3.firebasestorage.app")
+GCS_BUCKET = os.getenv("GCS_BUCKET", "")
 
 
 def _make_doc_id(uid: str, filename: str) -> str:

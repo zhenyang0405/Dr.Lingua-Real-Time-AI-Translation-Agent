@@ -1,8 +1,7 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from shared.auth import verify_token
-from shared.firestore_client import save_conversation, list_conversations, get_conversation
-from shared.storage_client import generate_signed_urls_batch
+from shared.firestore_client import save_conversation
 import json
 import logging
 import base64
@@ -22,8 +21,6 @@ from google.genai import types
 
 app = FastAPI(title="Dr. Lingua Visual Noun API")
 logger = logging.getLogger("uvicorn.error")
-
-GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 
 logging.getLogger("google.adk").setLevel(logging.DEBUG)
 logging.getLogger("google.genai").setLevel(logging.DEBUG)
@@ -340,48 +337,3 @@ async def websocket_endpoint(websocket: WebSocket):
             logger.info("No turns to save")
 
 
-async def _extract_auth_uid(request: Request) -> str:
-    """Extract and verify uid from Authorization Bearer token."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    token = auth_header[len("Bearer "):]
-    try:
-        return await verify_token(token)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-
-@app.get("/api/conversations")
-async def list_conversations_endpoint(request: Request):
-    """List past conversations for the authenticated user."""
-    uid = await _extract_auth_uid(request)
-    conversations = await list_conversations(uid)
-    return {"conversations": conversations}
-
-
-@app.get("/api/conversations/{session_id}")
-async def get_conversation_endpoint(session_id: str, request: Request):
-    """Get a full conversation with re-signed image URLs."""
-    uid = await _extract_auth_uid(request)
-    conversation = await get_conversation(uid, session_id)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Re-sign all GCS paths in cards
-    gcs_paths = []
-    for turn in conversation.get("turns", []):
-        output = turn.get("output", {})
-        for card in output.get("cards", []):
-            if card.get("gcs_path"):
-                gcs_paths.append(card["gcs_path"])
-
-    if gcs_paths and GCS_BUCKET:
-        signed_urls = await generate_signed_urls_batch(GCS_BUCKET, gcs_paths)
-        for turn in conversation.get("turns", []):
-            output = turn.get("output", {})
-            for card in output.get("cards", []):
-                if card.get("gcs_path") in signed_urls:
-                    card["image_url"] = signed_urls[card["gcs_path"]]
-
-    return conversation

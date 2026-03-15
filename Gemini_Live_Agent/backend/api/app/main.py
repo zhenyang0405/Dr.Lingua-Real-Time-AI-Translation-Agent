@@ -1,9 +1,17 @@
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env before route imports
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '.env')
+load_dotenv(dotenv_path=env_path)
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from shared.auth import verify_token
 from api.app.routes.health import router as health_router
 from api.app.routes.documents import router as documents_router
+from api.app.routes.conversations import router as conversations_router
 
 app = FastAPI(title="Dr. Lingua API")
 
@@ -40,3 +48,4 @@ async def auth_middleware(request: Request, call_next):
 # Include routes
 app.include_router(health_router)
 app.include_router(documents_router)
+app.include_router(conversations_router)
