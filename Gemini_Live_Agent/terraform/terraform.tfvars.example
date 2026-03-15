@@ -1,0 +1,5 @@
+project_id     = "your-gcp-project-id"
+region         = "us-central1"
+google_api_key = "your-gemini-api-key"
+gcs_bucket     = "your-project-id.firebasestorage.app"
+image_tag      = "latest"
