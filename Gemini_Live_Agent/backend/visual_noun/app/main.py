@@ -27,7 +27,7 @@ logging.getLogger("google.genai").setLevel(logging.DEBUG)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://live-api-challenge--theta-citron-488903-i3.us-central1.hosted.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

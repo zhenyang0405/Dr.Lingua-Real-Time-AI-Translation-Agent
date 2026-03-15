@@ -25,6 +25,13 @@ resource "google_project_iam_member" "secrets" {
   member  = "serviceAccount:${google_service_account.cloudrun_sa.email}"
 }
 
+# Sign blobs for GCS signed URLs (required without service account key file)
+resource "google_project_iam_member" "token_creator" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member  = "serviceAccount:${google_service_account.cloudrun_sa.email}"
+}
+
 # Firebase Auth token verification
 resource "google_project_iam_member" "firebase_auth" {
   project = var.project_id

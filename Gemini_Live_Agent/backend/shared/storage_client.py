@@ -49,19 +49,31 @@ async def generate_signed_url(bucket_name: str, path: str, expiration_minutes: i
     key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'secrets', 'serviceAccountKey.json')
 
     def _sign():
-        if os.path.exists(key_path):
-            credentials = service_account.Credentials.from_service_account_file(key_path)
-            client = storage.Client(credentials=credentials)
+        use_adc = not os.path.exists(key_path)
+        if not use_adc:
+            creds = service_account.Credentials.from_service_account_file(key_path)
+            client = storage.Client(credentials=creds)
         else:
-            client = storage.Client()
+            import google.auth
+            from google.auth.transport import requests as auth_requests
+            creds, project = google.auth.default()
+            auth_request = auth_requests.Request()
+            creds.refresh(auth_request)
+            client = storage.Client(credentials=creds, project=project)
 
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(path)
-        return blob.generate_signed_url(
-            version="v4",
-            expiration=datetime.timedelta(minutes=expiration_minutes),
-            method="GET",
-        )
+
+        sign_kwargs = {
+            "version": "v4",
+            "expiration": datetime.timedelta(minutes=expiration_minutes),
+            "method": "GET",
+        }
+        if use_adc:
+            sign_kwargs["service_account_email"] = getattr(creds, "service_account_email", None)
+            sign_kwargs["access_token"] = creds.token
+
+        return blob.generate_signed_url(**sign_kwargs)
 
     return await asyncio.to_thread(_sign)
 

@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["http://localhost:3000", "https://live-api-challenge--theta-citron-488903-i3.us-central1.hosted.app"],
+    "method": ["GET"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]
