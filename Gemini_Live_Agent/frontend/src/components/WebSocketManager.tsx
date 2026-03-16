@@ -15,6 +15,7 @@ interface WebSocketContextProps {
   setAgentStatus: (status: "idle" | "speaking" | "thinking" | "interrupted") => void;
   error: string | null;
   disconnect: () => void;
+  isTurnComplete: boolean;
   audioTrigger: number;
   audioQueue: string[];
   clearAudioQueue: () => void;

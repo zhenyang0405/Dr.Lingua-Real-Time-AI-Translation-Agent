@@ -16,6 +16,7 @@ export function useWebSocket(token: string | null) {
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
   const [agentStatus, setAgentStatus] = useState<"idle" | "speaking" | "thinking" | "interrupted">("idle");
+  const [isTurnComplete, setIsTurnComplete] = useState(false);
   const interruptedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +67,7 @@ export function useWebSocket(token: string | null) {
               audioQueueRef.current.push(msg.data);
               setAudioTrigger(prev => prev + 1);
               setAgentStatus("speaking");
+              setIsTurnComplete(false);
               break;
             case "tool_call":
               const itemReq: AnnotationItem = {
@@ -100,7 +102,7 @@ export function useWebSocket(token: string | null) {
               }
               inputTranscriptBuffer.current = "";
               outputTranscriptBuffer.current = "";
-              setAgentStatus("idle");
+              setIsTurnComplete(true);
               break;
             }
             case "interrupted": {
@@ -117,6 +119,7 @@ export function useWebSocket(token: string | null) {
               }
               inputTranscriptBuffer.current = "";
               outputTranscriptBuffer.current = "";
+              setIsTurnComplete(false);
               if (interruptedTimerRef.current) clearTimeout(interruptedTimerRef.current);
               setAgentStatus("interrupted");
               interruptedTimerRef.current = setTimeout(() => setAgentStatus("idle"), 8000);
@@ -193,6 +196,7 @@ export function useWebSocket(token: string | null) {
     setAgentStatus,
     error,
     disconnect,
+    isTurnComplete,
     audioQueue: audioQueueRef.current,
     clearAudioQueue,
     audioTrigger

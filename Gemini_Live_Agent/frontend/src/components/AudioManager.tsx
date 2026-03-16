@@ -3,7 +3,7 @@ import { useWebSocketContext } from './WebSocketManager';
 
 export const AudioManager: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
-  const { sendMessage, isConnected, agentStatus, audioQueue, clearAudioQueue, audioTrigger, setAgentStatus } = useWebSocketContext();
+  const { sendMessage, isConnected, agentStatus, audioQueue, clearAudioQueue, audioTrigger, setAgentStatus, isTurnComplete } = useWebSocketContext();
   
   // Microphone Capture
   const streamRef = useRef<MediaStream | null>(null);
@@ -25,7 +25,7 @@ export const AudioManager: React.FC = () => {
       });
       streamRef.current = stream;
 
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
 
       // Load the worklet script from the public folder
@@ -139,17 +139,35 @@ export const AudioManager: React.FC = () => {
   }, [audioTrigger, playQueue]);
 
 
-  // Clean up interrupted audio
+  // When the turn is complete, wait for remaining audio to finish, then go idle
   useEffect(() => {
-     if(agentStatus === "idle" || agentStatus === "interrupted") {
-         playbackQueueRef.current.forEach(node => {
-             try { node.stop(); } catch(e) {}
-             node.disconnect();
-         });
-         playbackQueueRef.current = [];
-         nextStartTimeRef.current = 0;
-         clearAudioQueue();
-     }
+    if (isTurnComplete && agentStatus === "speaking") {
+      const ctx = playbackContextRef.current;
+      if (ctx) {
+        const remaining = Math.max(0, nextStartTimeRef.current - ctx.currentTime);
+        const timer = setTimeout(() => {
+          playbackQueueRef.current = [];
+          nextStartTimeRef.current = 0;
+          setAgentStatus("idle");
+        }, remaining * 1000 + 150);
+        return () => clearTimeout(timer);
+      } else {
+        setAgentStatus("idle");
+      }
+    }
+  }, [isTurnComplete, agentStatus, setAgentStatus]);
+
+  // Force-stop audio only on interruption (user barge-in)
+  useEffect(() => {
+    if (agentStatus === "interrupted") {
+      playbackQueueRef.current.forEach(node => {
+        try { node.stop(); } catch(e) {}
+        node.disconnect();
+      });
+      playbackQueueRef.current = [];
+      nextStartTimeRef.current = 0;
+      clearAudioQueue();
+    }
   }, [agentStatus, clearAudioQueue]);
 
   return (

@@ -1,7 +1,5 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import { TranslationDoc } from '../types/messages';
 
 interface Props {
@@ -41,10 +39,7 @@ export const AnnotationCard: React.FC<Props> = ({ doc }) => {
 
       {doc.source_text && (
         <div className="mb-3 text-sm text-gray-500 italic overflow-x-auto">
-          <ReactMarkdown
-            remarkPlugins={[remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-          >
+          <ReactMarkdown>
             {doc.source_text}
           </ReactMarkdown>
         </div>
@@ -52,10 +47,7 @@ export const AnnotationCard: React.FC<Props> = ({ doc }) => {
 
       {doc.translated_text && (
         <div className="mb-4 text-[15px] leading-relaxed text-gray-900 overflow-x-auto whitespace-pre-wrap break-words">
-          <ReactMarkdown
-            remarkPlugins={[remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-          >
+          <ReactMarkdown>
             {doc.translated_text}
           </ReactMarkdown>
         </div>

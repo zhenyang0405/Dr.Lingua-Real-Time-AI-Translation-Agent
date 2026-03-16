@@ -101,6 +101,15 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
                     active_documents[session_id] = data["doc_name"]
                     logger.info(f"[upstream] Active document set: {data['doc_name']} for session {session_id}")
 
+                elif msg_type == "activity_start":
+                    logger.info(f"[upstream] Activity started for session {session_id}")
+
+                elif msg_type == "activity_end":
+                    logger.info(f"[upstream] Activity ended for session {session_id}")
+
+                else:
+                    logger.warning(f"[upstream] Unknown message type: {msg_type}")
+
     except WebSocketDisconnect:
         logger.info("Upstream task: WebSocket disconnected")
     except Exception as e:
@@ -130,13 +139,6 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
             ):
                 if shutdown_event.is_set():
                     return
-
-                # Log every event for debugging
-                logger.debug(f"[downstream] Event: turn_complete={event.turn_complete}, "
-                             f"interrupted={event.interrupted}, "
-                             f"has_content={bool(event.content and event.content.parts)}, "
-                             f"has_input_tx={bool(event.input_transcription)}, "
-                             f"has_output_tx={bool(event.output_transcription)}")
 
                 # Handle content parts (audio output + tool calls)
                 if event.content and event.content.parts:
