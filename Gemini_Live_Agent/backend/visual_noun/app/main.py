@@ -64,28 +64,18 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
     """
     try:
         while True:
-            message = await websocket.receive()
+            message = await websocket.receive_json()
 
-            if message.get("type") == "websocket.disconnect":
-                break
-
-            if "text" in message:
-                data = json.loads(message["text"])
-                msg_type = data.get("type")
-
-                if msg_type == "audio":
-                    audio_bytes = base64.b64decode(data["data"])
-                    live_request_queue.send_realtime(
-                        types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
-                    )
-
-                elif msg_type == "text":
-                    live_request_queue.send_content(
-                        types.Content(
-                            role="user",
-                            parts=[types.Part(text=data["content"])]
-                        )
-                    )
+            if message.get("type") == "activity_start":
+                live_request_queue.send_activity_start()
+                logger.info("Activity started")
+            elif message.get("type") == "activity_end":
+                live_request_queue.send_activity_end()
+                logger.info("Activity ended")
+            elif message.get("type") == "audio":
+                audio_data = base64.b64decode(message["data"])
+                audio_blob = types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
+                live_request_queue.send_realtime(audio_blob)
 
     except WebSocketDisconnect:
         logger.info("Upstream task: WebSocket disconnected")
